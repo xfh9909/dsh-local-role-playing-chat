@@ -9,11 +9,64 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const BOOT = path.resolve(HERE, '..', 'static', 'boot.js')
 const source = await fsp.readFile(BOOT, 'utf8')
 
+function createElement(tag) {
+  const element = {
+    tag,
+    id: '',
+    type: '',
+    title: '',
+    textContent: '',
+    style: {},
+    children: [],
+    listeners: {},
+    attrs: {},
+    classList: {
+      set: new Set(),
+      add(name) {
+        this.set.add(name)
+      },
+      remove(name) {
+        this.set.delete(name)
+      },
+      toggle(name, on) {
+        if (on === undefined) {
+          this.set.has(name) ? this.set.delete(name) : this.set.add(name)
+        } else if (on) {
+          this.set.add(name)
+        } else {
+          this.set.delete(name)
+        }
+        return this.set.has(name)
+      },
+      contains(name) {
+        return this.set.has(name)
+      },
+    },
+    appendChild(child) {
+      this.children.push(child)
+      return child
+    },
+    addEventListener(type, handler) {
+      ;(this.listeners[type] = this.listeners[type] || []).push(handler)
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = value
+    },
+    hasAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(this.attrs, name)
+    },
+    closest() {
+      return null
+    },
+  }
+  return element
+}
+
 /**
  * Run boot.js against a minimal fake browser. `embed` decides whether the
  * script believes it is inside an iframe (window.top !== window.self).
  */
-function run({ embed = false, raw = new Map(), fetchCalls = [] } = {}) {
+function run({ embed = false, raw = new Map(), hostDark = false } = {}) {
   const storage = {
     getItem: (key) => (raw.has(key) ? raw.get(key) : null),
     setItem: (key, value) => raw.set(key, String(value)),
@@ -24,15 +77,30 @@ function run({ embed = false, raw = new Map(), fetchCalls = [] } = {}) {
     },
   }
 
-  const listeners = []
+  const header = createElement('header')
+  const back = createElement('button')
+  const head = createElement('head')
+  const html = createElement('html')
+  const body = createElement('body')
+  if (hostDark) body.setAttribute('data-ds-dark-theme', '')
+
+  const fetchCalls = []
   const messages = []
+
   const document = {
     readyState: 'complete',
-    head: { appendChild() {} },
-    documentElement: { classList: { add() {} } },
-    getElementById: () => null,
-    createElement: () => ({ textContent: '' }),
-    addEventListener: (type, handler, capture) => listeners.push({ type, handler, capture }),
+    head,
+    documentElement: html,
+    body,
+    getElementById: (id) => {
+      if (id === 'role-back') return back
+      if (id === 'rp-exit') return header.children.find((child) => child.id === 'rp-exit') || null
+      if (id === 'rp-embed-style') return head.children.find((child) => child.id === 'rp-embed-style') || null
+      return null
+    },
+    querySelector: (selector) => (selector === '#role-main header' ? header : null),
+    createElement: (tag) => createElement(tag),
+    addEventListener() {},
   }
 
   const window = {
@@ -42,10 +110,15 @@ function run({ embed = false, raw = new Map(), fetchCalls = [] } = {}) {
       fetchCalls.push(typeof input === 'string' ? input : input.url)
       return Promise.resolve({ ok: true })
     },
-    parent: { postMessage: (payload) => messages.push(payload) },
-    top: embed ? {} : null,
+    parent: {
+      document,
+      getComputedStyle: () => ({ fontFamily: 'Host Sans' }),
+      postMessage: (payload) => messages.push(payload),
+    },
+    top: embed ? { marker: true } : null,
     document,
     console: { log() {}, warn() {}, error() {} },
+    getComputedStyle: () => ({ fontFamily: 'Host Sans' }),
     Request: class Request {
       constructor(url) {
         this.url = url
@@ -67,11 +140,13 @@ function run({ embed = false, raw = new Map(), fetchCalls = [] } = {}) {
     Array,
     Error,
     String,
+    setTimeout,
+    // No MutationObserver in the sandbox: watchHostTheme() exits early.
   })
   context.globalThis = context
   vm.runInContext(source, context, { filename: 'boot.js' })
 
-  return { window, document, raw, listeners, messages, fetchCalls }
+  return { window, document, raw, header, back, head, body, html, messages, fetchCalls }
 }
 
 describe('boot shim — storage isolation', () => {
@@ -145,36 +220,43 @@ describe('boot shim — embed mode', () => {
     assert.equal(raw.has('rp_ds_mode'), false)
   })
 
-  it('intercepts the back button and posts the exit message', () => {
-    const { listeners, messages } = run({ embed: true })
-    const click = listeners.find((l) => l.type === 'click' && l.capture)
-    assert.ok(click, 'capture-phase click listener registered')
+  it('hides the app’s own back button and mounts one exit button in the header', () => {
+    const { back, header, head } = run({ embed: true })
+    assert.equal(back.style.display, 'none', 'left-hand ← removed from the panel')
+    const exit = header.children.find((child) => child.id === 'rp-exit')
+    assert.ok(exit, 'exit button appended to the role header')
+    assert.equal(exit.textContent, '回到对话')
+    assert.equal(exit.title, '退出角色扮演，回到 DSH 的对话')
+    assert.ok(head.children.some((child) => child.id === 'rp-embed-style'), 'embed stylesheet injected')
+  })
 
-    let stopped = false
+  it('posts the exit message when the header button is clicked', () => {
+    const { header, messages } = run({ embed: true })
+    const exit = header.children.find((child) => child.id === 'rp-exit')
     let prevented = false
-    const back = {
-      closest: (selector) => (selector === '#role-back' ? back : null),
-    }
-    click.handler({
-      target: back,
-      preventDefault: () => {
+    exit.listeners.click[0]({
+      preventDefault() {
         prevented = true
-      },
-      stopImmediatePropagation: () => {
-        stopped = true
       },
     })
     assert.equal(prevented, true)
-    assert.equal(stopped, true)
-    // Cross-realm object: compare fields, not prototypes.
     assert.equal(messages.length, 1)
     assert.equal(messages[0].type, 'dsh-roleplay:exit')
   })
 
-  it('ignores clicks elsewhere', () => {
-    const { listeners, messages } = run({ embed: true })
-    const click = listeners.find((l) => l.type === 'click' && l.capture)
-    click.handler({ target: { closest: () => null }, preventDefault() {}, stopImmediatePropagation() {} })
-    assert.deepEqual(messages, [])
+  it('follows the host color scheme', () => {
+    const light = run({ embed: true, hostDark: false })
+    assert.equal(light.body.classList.contains('dark'), false)
+    assert.equal(light.body.style.fontFamily, 'Host Sans')
+
+    const dark = run({ embed: true, hostDark: true })
+    assert.equal(dark.body.classList.contains('dark'), true)
+  })
+
+  it('leaves the host document alone when standalone', () => {
+    const { header, head, body } = run({ embed: false })
+    assert.equal(header.children.length, 0, 'no exit button outside the panel')
+    assert.equal(head.children.length, 0, 'no embed stylesheet outside the panel')
+    assert.equal(body.style.fontFamily, undefined, 'host theme not applied')
   })
 })

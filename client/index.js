@@ -5,9 +5,10 @@
 //   main (keyed)       -> the full-area panel that hosts the roleplay app
 //
 // The panel is an iframe on /rp/ (same origin as the DSH window), so the app
-// keeps its own storage, its own keys and its own theme. Exiting is a
-// postMessage from the app's own back button, plus a small always-present ✕
-// as a safety net for the case where the app itself fails to boot.
+// keeps its own storage, its own keys and its own theme. Exiting is the app's
+// own job: its header carries a plain "回到对话" button (added by the injected
+// boot shim) that posts a message back here, and the layout switches to the
+// Conversation. No floating close chrome: the panel is the page.
 //
 // Hand-written in the lazy-CJS bundle protocol (window.__ModuleLoader__.load
 // with a factory returning cordis-plugin exports), the same stance as the
@@ -51,21 +52,14 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function closePanel(ctx) {
-      try {
-        if (ctx && ctx.layout && typeof ctx.layout.selectPanel === 'function') {
-          ctx.layout.selectPanel(null)
-          return
-        }
-      } catch (error) {
-        console.error('[roleplay] layout.selectPanel failed:', error)
-      }
-      // Last resort: the row can always be toggled from the rail, but say why
-      // the ✕ did nothing instead of failing silently.
-      console.warn('[roleplay] layout service unavailable; pick another panel in the sidebar')
-    }
-
-    function RoleplayPanelFactory(ctx) {
+    /**
+     * Build the panel component around one exit callback.
+     *
+     * `layout.selectPanel(null)` is the documented way back to the
+     * Conversation; the service is captured from the injection scope, because
+     * reaching for an undeclared service on the plugin context throws.
+     */
+    function RoleplayPanelFactory(selectConversation) {
       return function RoleplayPanel() {
         var React = require('react')
 
@@ -73,7 +67,7 @@ window.__ModuleLoader__.load({
           function onMessage(event) {
             var data = event && event.data
             if (!data || typeof data !== 'object') return
-            if (data.type === EXIT_MESSAGE) closePanel(ctx)
+            if (data.type === EXIT_MESSAGE) selectConversation()
           }
           window.addEventListener('message', onMessage)
           return function () {
@@ -89,6 +83,10 @@ window.__ModuleLoader__.load({
               width: '100%',
               height: '100%',
               minHeight: 0,
+              // Clip the frame to the host panel's rounded top-left corner
+              // (Windows desktop publishes --dsh-windows-content-radius).
+              overflow: 'hidden',
+              borderTopLeftRadius: 'var(--dsh-windows-content-radius, 0px)',
               background: 'var(--dsw-alias-bg-base, #ffffff)',
             },
           },
@@ -106,45 +104,6 @@ window.__ModuleLoader__.load({
               background: 'var(--dsw-alias-bg-base, #ffffff)',
             },
           }),
-          h(
-            'button',
-            {
-              type: 'button',
-              title: '退出角色扮演（回到对话）',
-              'aria-label': '退出角色扮演',
-              onClick: function () {
-                closePanel(ctx)
-              },
-              style: {
-                position: 'absolute',
-                top: '8px',
-                right: '10px',
-                zIndex: 2,
-                width: '26px',
-                height: '26px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                border: '1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.12))',
-                borderRadius: '8px',
-                background: 'var(--dsw-alias-bg-overlay, rgba(255,255,255,.86))',
-                color: 'var(--dsw-alias-label-tertiary, #666)',
-                fontSize: '14px',
-                lineHeight: 1,
-                cursor: 'pointer',
-                opacity: '0.45',
-                transition: 'opacity .15s ease',
-              },
-              onMouseEnter: function (event) {
-                event.currentTarget.style.opacity = '1'
-              },
-              onMouseLeave: function (event) {
-                event.currentTarget.style.opacity = '0.45'
-              },
-            },
-            '✕',
-          ),
         )
       }
     }
@@ -155,12 +114,19 @@ window.__ModuleLoader__.load({
         return
       }
 
-      // `slots` is the only hard requirement. `layout` is reached through the
-      // plugin context at click time, inside a try/catch, because a disposed
-      // generation can outlive one click during HMR.
-      ctx.inject(['slots'], function (scope) {
+      // `slots` + `layout` are the whole dependency set. Both live in the Web
+      // composition; the closure simply never runs in a host that lacks them.
+      ctx.inject(['slots', 'layout'], function (scope) {
         var slots = scope.slots
-        var Panel = RoleplayPanelFactory(ctx)
+        var layout = scope.layout
+
+        var Panel = RoleplayPanelFactory(function selectConversation() {
+          try {
+            layout.selectPanel(null)
+          } catch (error) {
+            console.error('[roleplay] cannot switch back to the conversation panel:', error)
+          }
+        })
 
         // `main` is a root-scoped keyed slot: the key is what the sidebar row
         // selects and what ctx.layout.selectPanel(id) validates against.

@@ -1,6 +1,6 @@
 {
   "name": "dsh-roleplay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Roleplay chat mode for DeepSeek Harness: a sidebar panel that mounts the local roleplay app on /rp/ with its own storage, SSE proxy and migration bridge.",
   "type": "module",
