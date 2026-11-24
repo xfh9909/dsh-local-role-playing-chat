@@ -5,8 +5,9 @@
 
 ## 里面是什么
 
-- **一个入口**：`sidebar.panellist` 里的「角色扮演」，排在「插件」「自动化任务」后面；
-  折叠成窄轨时显示图标，悬停出名字。
+- **一个入口**：`sidebar.panellist` 里的「角色扮演」，排在「插件」「自动化任务」后面（order 40）。
+  新装的条目按 DSH 的规则先收在侧栏的「更多」菜单里——第一次打开它时点旁边的图钉，
+  它就会固定在左侧导航里，之后一直可见；折叠成窄轨时显示面具图标，悬停出名字。
 - **一个面板**：`main` 键槽里的 `roleplay`，整块主区域装一个同源 iframe，加载 `/rp/`。
 - **两条服务端路由**：
   - `/rp/`：角色扮演应用本体（`static/` 里的构建产物，`index.html` 会在返回时注入适配层 `boot.js`）；
@@ -22,6 +23,29 @@
 ```
 
 装完**完全退出桌面端再启动**（插件注册的路由与客户端 bundle 都在启动时装配）。
+装之前在跑着的页面也能用：宿主路由是热注册的，客户端那一半可由页面的模块同步接上。
+
+## 维护与发布
+
+仓库是独立的 git 仓库，`main` 分支 + 语义化标签（`v1.0.0`）。
+`node scripts/check.mjs` 是出厂门，`node --test test/api.test.mjs test/static.test.mjs` 是回归。
+
+推到 GitHub（先在网页上建一个**空仓库**，不要勾 README / .gitignore / license）：
+
+```powershell
+./scripts/publish.ps1 -Remote <owner>/<repo>
+```
+
+脚本会把 `origin` 指过去，推 `main` 和全部标签。默认分支记得设成 `main`，
+`.github/workflows/ci.yml` 会在 Ubuntu / Windows + Node 20/22 上跑校验与测试。
+
+应用本体更新后同步产物：
+
+```powershell
+node scripts/sync-static.mjs --app <应用仓库路径> --build
+git add static && git commit -m "同步应用构建产物"
+```
+
 
 ## 数据从旧版本搬过来
 
