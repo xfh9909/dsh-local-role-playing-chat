@@ -1,0 +1,5 @@
+# dsh bundle layer: mount the roleplay mode (host routes + client panel).
+# The row id is what profile logs and inspect output refer to.
+- insert:
+    - id: roleplay
+      name: 'dsh-roleplay'

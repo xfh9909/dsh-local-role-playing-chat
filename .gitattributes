@@ -1,0 +1,12 @@
+# Normalize text files to LF in the repository; Windows checkouts keep CRLF
+# only for .cmd/.bat if they ever appear.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary artifacts
+*.png binary
+*.jpg binary
+*.webp binary
+*.woff2 binary
+*.asar binary

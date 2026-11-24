@@ -1,0 +1,77 @@
+# 角色扮演模式 · dsh-roleplay
+
+把角色扮演聊天伴侣收进 DeepSeek Harness（下称 DSH）的一个插件：左侧导航多一行
+「角色扮演」，点开在主区域进入角色扮演界面，点 ✕ 回到 DSH 对话。两套数据互不相干。
+
+## 里面是什么
+
+- **一个入口**：`sidebar.panellist` 里的「角色扮演」，排在「插件」「自动化任务」后面；
+  折叠成窄轨时显示图标，悬停出名字。
+- **一个面板**：`main` 键槽里的 `roleplay`，整块主区域装一个同源 iframe，加载 `/rp/`。
+- **两条服务端路由**：
+  - `/rp/`：角色扮演应用本体（`static/` 里的构建产物，`index.html` 会在返回时注入适配层 `boot.js`）；
+  - `/rp/api/*`：`status` / `chat`（SSE 透传）/ `migrate`（旧数据暂存）/ `settings` / `backup`。
+- **一套隔离存储**：适配层把 `localStorage` 的键统一加 `rp_` 前缀，把 IndexedDB 的
+  `dsh_chat_db` 改名成 `rp_chat_db`。DSH 自己的会话数据一个字节都碰不到。
+
+## 装
+
+```powershell
+# 在 DSH 里：插件 → 添加插件 → 选这个目录
+# 或者让 agent 用 plugin_manager 的 install_bundle 装
+```
+
+装完**完全退出桌面端再启动**（插件注册的路由与客户端 bundle 都在启动时装配）。
+
+## 数据从旧版本搬过来
+
+旧版角色扮演应用有两个入口（`file://` 双击 index.html、或启动器选 [1] 的
+`http://127.0.0.1:5180`），它们的浏览器存储和插件里的 `/rp/` 是三个独立抽屉。
+三条路，任选：
+
+1. **自动桥（推荐）**：在旧页面用 `index.html#migrate=端口` 打开（接收端是插件时端口就是
+   DSH 的端口，例如 `index.html#migrate=52210`），页面会把本机数据 POST 到
+   `/rp/api/migrate` 暂存；之后打开插件的「角色扮演」，应用发现本地是空库就自动取回导入。
+2. **手动导出/导入**：旧页面「⚙️ 设置 → ⬇ 导出全部数据」得到 JSON，插件页面「⚙️ 设置 →
+   ⬆ 从备份恢复」。
+3. **服务端备份**：`POST /rp/api/backup` 把页面数据另存到 `data/backups/`，随时可回。
+
+迁移前先备份、迁移幂等（重复导入结果一致）——这是应用原本 `exportAll`/`importAll` 的行为。
+
+## Key 放哪
+
+优先级：**页面上填的** > **插件 `data/settings.json` 的 `keys`** > **环境变量**
+（`DEEPSEEK_API_KEY`、`KIMI_API_KEY`、`GLM_API_KEY`、`RELAY88_API_KEY`、`XIN_API_KEY`、`CUSTOM_API_KEY`）。
+
+服务端 Key 用这条写：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:52210/rp/api/settings `
+  -H "content-type: application/json" `
+  -d '{\"keys\":{\"deepseek\":\"sk-...\"}}'
+```
+
+`GET /rp/api/settings` 只回掩码，不回明文。
+
+## 改应用本身
+
+应用在另一个仓库（零框架、esbuild）。插件只放构建产物：
+
+```powershell
+node scripts/sync-static.mjs --app <应用仓库路径> --build
+```
+
+`static/boot.js` 是**插件自己写的适配层**，同步不会覆盖它；`index.html` 里的
+`<script src="/rp/boot.js">` 是服务端注入的，构建产物本身保持干净。
+
+## 排查
+
+- 面板空白：先直接开 `http://127.0.0.1:<端口>/rp/`，看是路由没注册还是应用报错。
+- `/rp/api/status` 回 403：请求 Host 不是 loopback，或者 Origin 与 Host 不一致。
+- 发消息报 `NO_KEY`：三条 Key 来源都没填。
+- 迁移没反应：`GET /rp/api/migrate` 看有没有暂存项；旧页面必须带 `#migrate=端口`。
+
+## 卸载
+
+插件管理器里禁用/移除即可。`data/` 里的设置、备份、暂存数据在仓库目录里，
+删不删都行；角色与会话在浏览器 origin 里，清浏览器数据才会没。

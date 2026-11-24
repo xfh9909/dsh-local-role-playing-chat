@@ -1,0 +1,57 @@
+# 角色扮演模式
+
+在 DSH 左侧导航加一行「角色扮演」。点开，主区域换成角色扮演聊天界面；点 ✕（或界面左上角的返回），回到 DSH 对话。两套会话数据互不相干。
+
+## 做了什么
+
+**入口与面板**
+
+- `sidebar.panellist` 注册 `roleplay` 一行，`order: 40`，排在「插件」「自动化任务」之后；侧栏折叠成窄轨时显示面具图标，悬停出文字。
+- `main` 键槽注册同名的 `roleplay` 面板，整块主区域装一个同源 iframe（`/rp/`）。面板右上角有一个半透明的 ✕，界面里左上角的返回按钮也通向同一个出口——前者是应用没起来时的保险。
+
+**应用本体**
+
+- `/rp/` 由插件静态托管，`static/` 里是角色扮演应用的构建产物（`index.html` + `app.js` + `app.css` + marked）。
+- 返回 `index.html` 时在 `<head>` 注入 `/rp/boot.js`：这是插件自己的适配层，构建产物保持原样。
+
+**数据隔离**
+
+`boot.js` 在应用脚本之前做三件事：
+
+- `localStorage` 的键统一加 `rp_` 前缀（应用原本用 `ds_*`）；
+- IndexedDB 的 `dsh_chat_db` 改名 `rp_chat_db`；
+- `/api/*` 的 fetch 重写到 `/rp/api/*`。
+
+于是角色、会话、世界书、好感、总结都留在 `/rp/` 这个 origin 的 `rp_*` 键和 `rp_chat_db` 库里，跟 DSH 自己的会话不共享任何键。清 DSH 缓存不影响角色扮演，反之亦然。
+
+**模型请求**
+
+`POST /rp/api/chat` 是 OpenAI 兼容接口的流式透传，行为和原应用自带的 `server/proxy.js` 一致：原样转 SSE、客户端断开即中止上游、首包超时 30 分钟（可配）、请求体默认上限 64 MB。
+
+Key 的来源优先级：页面设置里填的 > 插件 `data/settings.json` 的 `keys` > 环境变量（`DEEPSEEK_API_KEY` / `KIMI_API_KEY` / `GLM_API_KEY` / `RELAY88_API_KEY` / `XIN_API_KEY` / `CUSTOM_API_KEY`）。`GET /rp/api/settings` 只返回掩码。
+
+**迁移**
+
+- `POST /rp/api/migrate` 暂存一份旧页面导出的备份（这个端点对 `file://` 的 `Origin: null` 开放 CORS，只写 JSON 不等价于执行任何东西）；
+- `GET /rp/api/migrate` 返回最新的暂存数据，字段 `data` 与旧 `migrate.js` 轮询的形状一致，所以「打开插件页面 → 空库自动取回导入」这条老链路不用改；
+- 应用自己的「导出全部数据 / 从备份恢复」仍然可用，这是最稳的手动路径。
+
+## 装与用
+
+1. 插件 → 添加插件 → 选 `dsh-roleplay` 目录；
+2. 完全退出桌面端再启动（宿主路由与客户端 bundle 都在启动时装配）；
+3. 左侧导航点「角色扮演」。
+
+装完先打开 `http://127.0.0.1:<DSH 端口>/rp/api/status`，返回 `{"ok":true,"proxy":true,...}` 就说明服务端这一半活着。
+
+## 限制
+
+- **面板切换会重建 iframe**。角色、会话、好感都在存储里，重新加载能恢复；没发出去的输入草稿会丢。
+- **iframe 与宿主主题不联动**。应用有自己的亮/暗设置，暂不跟随 DSH 主题。
+- **迁移桥的发送端仍需知道端口**。旧页面用 `index.html#migrate=端口` 打开才发得对；插件不猜端口。
+- **路由没有身份校验，只有来源校验**。`/rp/*` 与 `/rp/api/*` 只认 loopback + 同源，与 DSH 的 `/api` 认证是两套东西——本机同用户的进程都能访问 `/rp/`。绑定非 loopback 地址时这条限制才真正要紧。
+- **只服务一个内置应用**。`static/` 里的产物由 `node scripts/sync-static.mjs` 从应用仓库同步，插件不提供应用编辑器。
+
+## 卸载
+
+插件管理器里禁用或移除。`data/` 下的设置、备份、暂存数据留在目录里，删不删都不影响 DSH；角色与会话在浏览器 origin 里，清浏览器数据才会没有。

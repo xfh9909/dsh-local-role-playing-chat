@@ -1,0 +1,16 @@
+# Runtime data: settings (may hold API keys), staged migrations, backups.
+data/
+
+# Dependencies (the plugin ships no runtime deps, but dev tooling may add some)
+node_modules/
+
+# Logs and editor/OS noise
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local scratch
+*.local.*

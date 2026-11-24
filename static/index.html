@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek 聊天伴侣</title>
+<!-- 样式按功能拆分为多个文件，按依赖顺序加载（改哪个界面就找哪个文件） -->
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- 左侧会话栏 -->
+  <aside id="sidebar">
+    <div class="side-head">
+      <span class="side-title">对话列表</span>
+      <button id="new-chat" title="新建会话">＋ 新会话</button>
+    </div>
+    <div id="session-list"></div>
+  </aside>
+
+  <!-- 主区域 -->
+  <div id="main">
+    <header>
+      <button id="side-toggle" title="展开/收起侧栏">☰</button>
+      <div class="logo">D</div>
+      <h1>DeepSeek 聊天伴侣</h1>
+      <select id="model">
+        <option value="deepseek-v4-pro" selected>deepseek-v4-pro (V4 Pro)</option>
+        <option value="deepseek-v4-flash">deepseek-v4-flash (V4 Flash)</option>
+      </select>
+      <button id="theme-btn" title="切换主题">🌙</button>
+      <button id="clear-btn" title="清空当前会话">清空</button>
+      <button id="mode-btn" title="切换角色扮演模式">🎭 角色模式</button>
+      <button id="setting-btn" title="设置">⚙️</button>
+    </header>
+
+    <div id="chat">
+      <div class="wrap" id="messages">
+        <div class="empty" id="empty">
+          <div class="big">💬</div>
+          <div>你好呀，我是你的 AI 伴侣<br>有什么想聊的，随时告诉我～</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="input-box">
+        <textarea id="input" rows="1" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button id="send" title="发送">➤</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ 角色扮演模式 ============ -->
+<div id="role-app" class="is-hidden">
+  <!-- 顶部通告堆：随机事件等即时提示挂在这里，fixed 定位，跟着视口走 -->
+  <div id="role-notice-stack" class="notice-stack"></div>
+  <aside id="role-sidebar">
+    <div class="side-head">
+      <span class="side-title">角色列表</span>
+      <button id="role-new">＋ 创建角色</button>
+    </div>
+    <div id="role-list"></div>
+  </aside>
+
+  <div id="role-main">
+    <header>
+      <button id="role-back" title="返回聊天模式">←</button>
+      <div class="logo" id="role-avatar">🎭</div>
+      <h1 id="role-name">角色扮演</h1>
+            <button id="role-worldbook" title="世界书管理">📖 世界书</button>
+      <button id="role-chatstyle" title="聊天设置（生成样式/颜色）">🎨 聊天设置</button>
+      <button id="role-summary" title="查看 / 编辑剧情阶段总结（注入正文的「前情提要」）">🧠 总结</button>
+      <button id="role-history" title="聊天记录">💬 记录</button>
+      <button id="role-setting" title="设置">⚙️</button>
+    </header>
+
+    <div id="role-body">
+      <div id="role-portrait">
+        <!-- 聊天记录：直接盖在立绘区上，不再弹窗挡住整屏 -->
+        <div id="history-modal" class="role-hist-panel is-hidden">
+          <div class="rh-head">
+            <span class="rh-title">💬 聊天记录</span>
+            <button id="hist-close" class="close-x" title="关闭">×</button>
+          </div>
+          <div id="hist-list" class="rh-list"></div>
+          <div class="rh-btns">
+            <button id="hist-new" class="primary wide">＋ 新对话</button>
+            <button id="hist-clear" class="danger wide" title="只清空消息，保留会话与标题">清空当前会话消息</button>
+          </div>
+        </div>
+        <img id="role-portrait-img" alt="角色立绘">
+        <button id="portrait-prev" class="portrait-nav" type="button" title="上一张立绘">‹</button>
+        <button id="portrait-next" class="portrait-nav" type="button" title="下一张立绘">›</button>
+        <div id="portrait-count" class="portrait-count"></div>
+        <div id="role-portrait-fallback">
+          <div class="big" id="rp-emoji">🎭</div>
+          <div id="rp-name">角色名</div>
+        </div>
+      </div>
+      <div id="role-chat-wrap">
+        <!-- 世界模式场景条：地点 + 在场 NPC + 关系面板入口（普通角色卡不显示） -->
+        <div id="role-scene" class="is-hidden">
+          <span class="scene-tag">📍 地点</span>
+          <select id="role-scene-loc" title="切换当前地点（会写进提示词的当前场景）"></select>
+          <span class="scene-tag">👥 在场</span>
+          <div id="role-scene-present" class="scene-chips"></div>
+          <button id="role-scene-rel" type="button" class="btn-sm" title="查看/编辑关系与好感">❤️ 关系</button>
+        </div>
+        <!-- 剧情时间线栏：短期记忆，随对话自动更新，辅助时间/地点/人物一致性 -->
+        <div id="role-timeline" class="is-hidden">
+          <div class="tl-head"><span class="tl-title">📅 剧情时间线</span><span class="tl-count" id="role-tl-count"></span><button id="role-tl-add" type="button" title="手动补一条（AI 漏掉的、或你想强调的）">＋ 添加</button><button id="role-tl-optimize" type="button" title="让 AI 浏览最近 30 条对话，把琐碎事件合并精简，避免单一场景占满记忆位">✨ 优化</button><button id="role-tl-toggle" type="button">收起</button></div>
+          <div class="tl-body" id="role-tl-body"></div>
+        </div>
+        <div id="role-chat">
+          <div class="wrap" id="role-messages">
+            <div class="empty" id="role-empty">
+              <div class="big">🎭</div>
+              <div>还没有角色<br>点击左侧「＋ 创建角色」开始你的角色扮演之旅</div>
+            </div>
+          </div>
+        </div>
+        <!-- 定位按钮：向上翻看历史时出现，点击跳回最新消息 -->
+        <button id="role-jump" class="role-jump" type="button" title="跳到最新消息">↓ 最新</button>
+        <!-- 输入框放在右侧对话栏下方：输入长文本时只压缩聊天区，不影响左侧立绘 -->
+        <footer>
+          <div class="input-box">
+            <textarea id="role-input" rows="1" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
+            <button id="role-send" title="发送">➤</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 弹窗遮罩 ============ -->
+<div id="modal-mask"></div>
+
+<!-- 角色创建/编辑弹窗 -->
+<div id="role-editor" class="modal role-editor-modal">
+  <h2><span class="modal-icon">🎭</span><span id="re-title">创建角色</span><button class="close-x" id="re-close-x">×</button></h2>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="re-world-mode"> 🌍 世界模式 · 多角色可攻略 / 开放探索</label>
+    <p class="field-note">开启后这张卡是「世界」而不是单个角色：可以添加多个可攻略 NPC 与地点，对话时由 AI 扮演所有在场角色、玩家自由行动。关掉就还是普通单角色卡。</p>
+  </div>
+  <div class="field is-hidden" id="re-world-fields">
+    <label>可攻略角色（NPC 名册）</label>
+    <div id="re-npc-list" class="npc-editor-list"></div>
+    <button id="re-npc-add" type="button" class="btn-sm">＋ 添加 NPC</button>
+    <label class="sub-label">地点（玩家能去的地方）</label>
+    <div id="re-loc-list" class="loc-editor-list"></div>
+    <button id="re-loc-add" type="button" class="btn-sm">＋ 添加地点</button>
+    <p class="field-note">NPC「详细设定」写得越具体越好：身份、性格、外貌、秘密、对玩家的初始态度。说话方式用来固定口癖与称呼。</p>
+  </div>
+  <div class="re-grid">
+    <div class="re-col">
+      <div class="field">
+        <label>名称</label>
+        <input type="text" id="re-name" placeholder="角色名字">
+      </div>
+      <div class="field">
+        <label>头像（emoji）</label>
+        <input type="text" id="re-avatar" placeholder="🤖" maxlength="8">
+      </div>
+      <div class="field">
+        <label>头像图片（可选，优先于 emoji，≤20MB 手动裁剪）</label>
+        <div class="img-pick">
+          <button id="re-avatarimg-btn" type="button">选择图片</button>
+          <div class="img-preview" id="re-avatarimg-preview"></div>
+          <button id="re-avatarimg-clear" type="button">移除</button>
+        </div>
+        <input type="file" id="re-avatarimg-file" accept="image/*" hidden>
+      </div>
+      <div class="field">
+        <label>主题色</label>
+        <div id="re-colors"></div>
+      </div>
+      <div class="field">
+        <label id="re-desc-label">简介（一句话，显示在角色卡片上）</label>
+        <input type="text" id="re-desc" placeholder="例如：温柔可爱的邻家少女">
+      </div>
+      <div class="field">
+        <label>角色立绘（可添加多张，对话界面用左右箭头切换；点缩略图设为当前立绘，导入后手动裁剪为 2:3 竖画，输出最高 1600×2400，≤20MB，最多 8 张）</label>
+        <div class="portrait-list" id="re-portrait-list"></div>
+        <div class="img-pick">
+          <button id="re-portrait-btn" type="button">＋ 添加立绘</button>
+        </div>
+        <input type="file" id="re-portrait-file" accept="image/*" hidden>
+      </div>
+      <div class="field">
+        <label>角色设定图（外貌 / 服装 / 体态参考，最多 4 张；AI 会用视觉模型读图，把形象写进设定）</label>
+        <div class="setting-imgs" id="re-setting-list"></div>
+        <div class="img-pick">
+          <button id="re-setting-btn" type="button">＋ 添加设定图</button>
+          <button id="re-setting-vision" type="button">👁 读取设定图</button>
+        </div>
+        <input type="file" id="re-setting-file" accept="image/*" multiple hidden>
+        <textarea id="re-setting-desc" placeholder="点「读取设定图」自动生成；也可以手写外形描述：发色、瞳色、体型、服装、标志性细节"></textarea>
+        <input type="text" id="re-setting-model" placeholder="识图模型（可选，默认 deepseek-v4-flash-vision-exp）">
+        <p class="field-note" id="re-setting-status">还没有设定图。</p>
+      </div>
+      <div class="field">
+        <label>聊天背景（对话区背景图，≤20MB 自动压缩）</label>
+        <div class="img-pick">
+          <button id="re-bg-btn" type="button">选择图片</button>
+          <div class="img-preview wide" id="re-bg-preview"></div>
+          <button id="re-bg-clear" type="button">移除</button>
+        </div>
+        <input type="file" id="re-bg-file" accept="image/*" hidden>
+      </div>
+    </div>
+    <div class="re-col">
+      <div class="field">
+        <label id="re-personality-label">详细设定（性格、外貌、背景、说话风格等）</label>
+        <textarea id="re-personality" placeholder="越详细越好，例如：你是一名 17 岁的女高中生，性格开朗……"></textarea>
+      </div>
+      <div class="field">
+        <label>玩家设定（你是谁：姓名、身份、外貌等，AI 会据此了解并称呼你，可留空）</label>
+        <textarea id="re-userinfo" placeholder="例如：张三，22 岁的冒险者，性格豪爽，喜欢喝酒和打猎"></textarea>
+      </div>
+      <div class="field">
+        <label>开场白（新对话时自动发送的第一句话，可留空）</label>
+        <textarea id="re-greeting" placeholder="嗨，你来啦～"></textarea>
+      </div>
+      <div class="field">
+        <label>示例对话（可选，帮助 AI 模仿语气）</label>
+        <textarea id="re-example" placeholder="{{user}}: 你好呀&#10;{{char}}: 你好～"></textarea>
+      </div>
+      <div class="field">
+        <label>使用哪些世界书</label>
+        <div class="wb-summary-row">
+          <div id="re-wb-summary" class="wb-summary-text">还没有世界书</div>
+          <button id="re-wb-pick" type="button" class="wb-summary-btn">选择…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-btns">
+    <button id="re-del" class="danger is-hidden">🗑 删除该角色</button>
+    <span class="flex-spacer"></span>
+    <button id="re-cancel">取消</button>
+    <button id="re-save" class="primary">保存角色</button>
+  </div>
+</div>
+
+<!-- 关系与好感弹窗（世界模式） -->
+<div id="rel-modal" class="modal">
+  <h2><span class="modal-icon">❤️</span>关系与好感<button id="rel-close" class="close-x">×</button></h2>
+  <p class="modal-tip">这里是代码维护的客观进度，会注入提示词；状态栏里的好感度必须在此基础上增减。改完点保存。</p>
+  <div id="rel-list" class="rel-list"></div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="rel-save" class="primary">保存关系</button>
+  </div>
+</div>
+
+<!-- 世界书弹窗 -->
+<div id="worldbook-modal" class="modal worldbook-modal">
+  <h2><span class="modal-icon">📖</span>世界书<button id="wb-close" class="close-x">×</button></h2>
+  <!-- 书列表视图 -->
+  <div id="wb-view-list">
+    <p class="modal-tip">世界书按「书 → 条目」两级组织：一本世界书可包含多条设定；在角色编辑界面勾选导入后，才会在该角色对话中生效。</p>
+    <div id="wb-book-list"></div>
+    <button id="wb-new-book" class="primary wide">＋ 新建世界书</button>
+    <div class="wb-io">
+      <button id="wb-export" type="button" title="把全部世界书导出为 JSON 文件（备份 / 迁移 / 发给我检查）">📤 导出</button>
+      <button id="wb-import" type="button" title="从 JSON 文件导入，可合并或替换">📥 导入</button>
+      <input type="file" id="wb-import-file" accept=".json,application/json" hidden>
+    </div>
+  </div>
+  <!-- 书内条目视图 -->
+  <div id="wb-view-book" class="is-hidden">
+    <div id="wb-book-head">
+      <button id="wb-back" type="button">← 返回</button>
+      <span id="wb-book-name"></span>
+      <span class="flex-spacer"></span>
+      <button id="wb-book-del" type="button" class="danger">删除本书</button>
+    </div>
+    <div class="wb-toolbar" id="wb-toolbar">
+      <input type="search" id="wb-search" placeholder="🔍 搜索标题 / 关键词 / 内容…">
+      <select id="wb-sort" title="排序方式">
+        <option value="priority">按优先级</option>
+        <option value="time">按创建时间</option>
+        <option value="title">按标题</option>
+      </select>
+      <select id="wb-status" title="状态筛选">
+        <option value="all">全部状态</option>
+        <option value="on">仅启用</option>
+        <option value="off">仅停用</option>
+      </select>
+      <span id="wb-stats"></span>
+    </div>
+    <div id="wb-entry-list"></div>
+    <button id="wb-new-entry" class="primary wide">＋ 新建条目</button>
+    <div id="wb-entry-form" class="is-hidden">
+      <div class="wbe-head" id="wbe-head">＋ 新建条目</div>
+      <div class="field">
+        <label>标题</label>
+        <input type="text" id="wbe-title" placeholder="例如：学院背景">
+      </div>
+      <div class="field">
+        <label>触发方式</label>
+        <select id="wbe-mode">
+          <option value="keyword">🔑 关键词触发（消息命中关键词时注入）</option>
+          <option value="always">📌 常态触发（每轮对话始终注入）</option>
+        </select>
+      </div>
+      <div class="field" id="wbe-kw-field">
+        <label>关键词（逗号 / 换行分隔，命中任一即触发；支持长列表，输入框会自动长高）</label>
+        <textarea id="wbe-keywords" rows="2" placeholder="学院, 学校, 上课&#10;森林, 魔兽, 冒险者公会"></textarea>
+      </div>
+      <div class="field">
+        <label>知识优先级（数字越大优先级越高、越靠前注入，默认 100）</label>
+        <input type="number" id="wbe-priority" min="0" max="999" value="0">
+      </div>
+      <div class="field">
+        <label>读取强度 <span class="val" id="wbe-str-val">2</span>（1-10 档，越高 AI 越严格遵守该条目，默认 2）</label>
+        <input type="range" id="wbe-strength" min="1" max="10" step="1" value="2">
+      </div>
+      <div class="field">
+        <label>内容</label>
+        <textarea id="wbe-content" placeholder="设定内容……"></textarea>
+      </div>
+      <div class="modal-btns">
+        <span class="flex-spacer"></span>
+        <button id="wbe-cancel" type="button">取消</button>
+        <button id="wbe-save" type="button" class="primary">保存条目</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- 世界书选择子弹窗（角色编辑里点「选择…」打开） -->
+<div id="wb-pick-modal" class="modal is-hidden">
+  <h2>选择世界书 <button id="wb-pick-close" class="close-x">×</button></h2>
+  <p class="modal-tip">勾选的会在这个角色的对话里生效。</p>
+  <div id="wb-pick-list" class="wb-pick-list"></div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="wb-pick-cancel" type="button">取消</button>
+    <button id="wb-pick-ok" class="primary">确定</button>
+  </div>
+</div>
+
+<!-- 世界书导入弹窗 -->
+<div id="wb-import-modal" class="modal is-hidden">
+  <h2>导入世界书 <button id="wb-import-cancel-x" class="close-x">×</button></h2>
+  <p class="modal-tip">文件：<b id="wb-import-name"></b></p>
+  <p class="modal-tip" id="wb-import-info"></p>
+  <div class="field">
+    <label>导入方式</label>
+    <label class="check-row"><input type="radio" name="wb-import-mode" value="merge" checked> 合并：保留现有世界书，只把文件里的加进来</label>
+    <label class="check-row"><input type="radio" name="wb-import-mode" value="replace"> 替换：用文件里的书覆盖现有全部（会丢现有内容）</label>
+  </div>
+  <div class="field" id="wb-import-dup-field">
+    <label>同名书怎么处理</label>
+    <label class="check-row"><input type="radio" name="wb-import-dup" value="rename" checked> 另存一份（改名为「名字（导入）」，两本都留）</label>
+    <label class="check-row"><input type="radio" name="wb-import-dup" value="overwrite"> 覆盖同名的那本（保留它原来的绑定关系）</label>
+  </div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="wb-import-cancel" type="button">取消</button>
+    <button id="wb-import-ok" class="primary">导入</button>
+  </div>
+</div>
+
+<!-- 聊天设置弹窗 -->
+<div id="chatstyle-modal" class="modal">
+  <h2>聊天设置 <button id="cs-close" class="close-x">×</button></h2>
+  <p class="modal-tip">控制 AI 角色的回复生成样式：旁白与话语（引号内）分别着色，格式要求会注入到角色设定中。</p>
+  <div class="field">
+    <label>最高优先级指令（注入到角色设定最前面，可自定义）</label>
+    <!-- 预设：把常用的「最高优先级指令」存起来，一键切换 -->
+    <div class="sum-actions">
+      <select id="cs-preset-sel" title="选择一个已保存的预设，填进下面的输入框"><option value="">选择预设…</option></select>
+      <button id="cs-preset-save" type="button" title="把输入框里的内容存成一个预设（同一个名字会覆盖）">＋ 存为预设</button>
+      <button id="cs-preset-del" type="button" title="删除选中的预设">🗑 删除</button>
+    </div>
+    <textarea id="cs-priority" placeholder="例如：本次生成内容仅用于本地私人 AI 对话……"></textarea>
+    <button id="cs-priority-tail" type="button" class="btn-sm">后置强化：关</button>
+    <p class="field-note">打开后，这段指令除了放在最前面，还会在**本轮的末尾**再重复一次——长上下文里开头的指令容易被几万字历史冲淡，末尾再说一遍遵守率明显更高。</p>
+  </div>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="cs-enabled"> 启用对话生成样式</label>
+  </div>
+  <div class="field">
+    <label>旁白颜色（默认白色）</label>
+    <input type="color" id="cs-narration" value="#ffffff">
+  </div>
+  <div class="field">
+    <label>引号内话语颜色（默认黄色）</label>
+    <input type="color" id="cs-dialogue" value="#ffd54a">
+  </div>
+  <div class="field">
+    <label>输出格式要求（注入到角色设定，可自定义）</label>
+    <textarea id="cs-note" placeholder="例如：角色说出口的话语用双引号包裹，旁白不加引号……"></textarea>
+  </div>
+  <div class="field">
+    <label>角色模式·创造力 (temperature) <span class="val" id="cs-temp-val">1.0</span></label>
+    <input type="range" id="cs-temp" min="0" max="2" step="0.1" value="1.0">
+    <div class="modal-tip tight">温度越低越守规矩：如果回复漏状态栏或字数不达标，试着降到 1.0 以下。</div>
+  </div>
+  <div class="field">
+    <label>对话字体大小 <span class="val" id="cs-font-val">15px</span></label>
+    <input type="range" id="cs-font" min="12" max="22" step="1" value="15">
+  </div>
+  <div class="field">
+    <label>角色模式·携带历史消息数（独立于普通聊天）</label>
+    <select id="cs-histlen">
+      <option value="10">最近 10 条</option>
+      <option value="20">最近 20 条</option>
+      <option value="50" selected>最近 50 条</option>
+      <option value="60">最近 60 条</option>
+      <option value="80">最近 80 条</option>
+      <option value="100">最近 100 条</option>
+      <option value="9999">全部</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>携带历史的字符预算（超过就从最早的整轮开始丢，0 = 不限制）</label>
+    <input type="number" id="cs-histchars" min="0" max="500000" step="5000" value="60000">
+    <p class="field-note">条数管不住长内容：50 条长回复可能就有十几万字。这里按「正文 + 状态栏」的字符数从最近往回攒，超预算就丢最早的一整轮；最后一条用户输入永远保留。</p>
+  </div>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="cs-reasoning"> 显示思考过程（kimi-k2-thinking 等模型的推理内容）</label>
+  </div>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="cs-length-enabled"> 启用正文字数控制（每次回复正文的目标字数区间）</label>
+  </div>
+  <div class="field">
+  </div>
+  <div class="field">
+    <div class="sum-actions">
+      <button id="role-rnd-pause" type="button" title="暂停随机事件累计（冻结数值、不掷新事件；再点恢复）">⏸ 暂停随机</button>
+      <button id="cs-rnd-cancel" type="button" title="取消当前已经掷出、但还没写进正文的事件">✕ 取消当前事件</button>
+    </div>
+    <p class="field-note" id="cs-rnd-pending">当前没有挂起的事件。</p>
+    <label class="check-row"><input type="checkbox" id="cs-rand-event"> 启用随机事件系统（每轮对话结束累计值 +15%，起点 10%，上限 300%；概率 = 70% × (累计值/300)^1.5，越攒越容易触发，攒满 300% 必定触发。按累计值分「小 / 中 / 大」三档（120% 起中、195% 起大），触发后回落到 10%，并进入 3 / 5 / 8 轮的余波期；事件会强制写进正文制造冲突）</label>
+  </div>
+  <div class="field" id="cs-length-field">
+    <label>正文字数区间（不含末尾状态栏 · 下限必须达标，上限可超出） <span class="val" id="cs-length-val">200 ~ 500 字</span></label>
+    <div class="range-duo">
+      <div class="range-track" id="cs-length-track"></div>
+      <input type="range" id="cs-length-min" min="50" max="4000" step="10" value="200" title="最少字数（硬性底线）">
+      <input type="range" id="cs-length-max" min="50" max="4000" step="10" value="500" title="最多字数（参考上限，可超出）">
+    </div>
+  </div>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="cs-summary-enabled"> 自动智能总结（对话过长时自动压缩历史，防止上下文臃肿导致 AI 变笨）</label>
+  </div>
+  <div class="field">
+    <label>触发总结的未总结消息条数</label>
+    <select id="cs-summary-threshold">
+      <option value="30">达到 30 条时总结</option>
+      <option value="50" selected>达到 50 条时总结</option>
+      <option value="80">达到 80 条时总结</option>
+      <option value="100">达到 100 条时总结</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>总结指令（可自定义：要保留哪些信息、字数上限）</label>
+    <textarea id="cs-summary-prompt" placeholder="总结要求……"></textarea>
+  </div>
+  <div class="field">
+    <label class="check-row"><input type="checkbox" id="cs-status-enabled"> 启用状态栏（手动模式：点击回复上的「📊 状态栏」单独生成，不影响正文质量；生成正文时可参考历史状态栏内容）</label>
+  </div>
+  <div class="field">
+    <label>状态栏提示词（注入到角色设定，控制状态栏的内容与格式，可自定义）</label>
+    <textarea id="cs-status-prompt" placeholder="状态栏要求……"></textarea>
+    <label class="sub-label">去鱼味（只作用于状态栏生成，不影响正文）</label>
+    <textarea id="cs-status-antics" placeholder="留空则不注入。写你想禁掉的句式与腔调。"></textarea>
+    <label class="check-row"><input type="checkbox" id="cs-status-joint"> 状态栏随正文一起生成（默认开：一次请求同时出正文和状态栏，省掉单独生成时那一整轮输入；关掉则回到手动点「📊 状态栏」）。注意：上面的「启用状态栏」必须勾上，否则不会生成</label>
+    <label class="check-row"><input type="checkbox" id="cs-status-wb"> 状态栏生成时携带世界书（默认开；关掉能明显提速，但世界观/任务栏可能开始乱编）</label>
+    <label class="sub-label">携带最近几轮对话</label>
+    <input type="number" id="cs-status-histn" min="0" max="12" step="1" value="2">
+    <label class="sub-label">每条正文摘录多少字</label>
+    <input type="number" id="cs-status-excerpt" min="200" max="6000" step="100" value="2500">
+    <p class="field-note">默认：带世界书、只看最近 2 轮对话、每条摘 2500 字。另外还会固定附上「上一版状态栏」和「本条回复正文」——这两样不吃这个轮数设置。</p>
+  </div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="cs-save" class="primary">保存</button>
+  </div>
+</div>
+
+<!-- 剧情阶段总结：查看 / 修改 AI 的「前情提要」 -->
+<div id="summary-modal" class="modal">
+  <h2>剧情阶段总结 <button id="summary-close" class="close-x">×</button></h2>
+  <p class="modal-tip">这是 AI 的「前情提要」——每次生成正文时，它会作为背景记忆注入提示词。手写的内容会被原样注入。</p>
+  <div class="modal-tip" id="summary-info"></div>
+  <!-- 操作按钮上移到总结框正上方：它们都是对「这份总结」的操作 -->
+  <div class="sum-actions">
+    <button id="role-save" type="button" title="存档：立刻落盘，并把还没并入总结的对话进度一起固化（需要 API Key）">💾 存档</button>
+    <button id="summary-progress" type="button" title="把还没并入的新对话总结进去（增量，不动已有内容）">💾 保存进度</button>
+    <button id="summary-redo" type="button" title="忽略进度，按最近 50 条整体重算一份">⟳ 重新生成</button>
+    <button id="summary-clear" type="button" title="清空这份总结">清空</button>
+  </div>
+  <div class="field">
+    <textarea id="summary-text" placeholder="还没有总结。可以点「⟳ 重新生成」，或者直接在这里手写一份——手写的内容会被原样注入。"></textarea>
+  </div>
+  <div class="field">
+    <label>⭐ 重要记忆（每行一条，优先级高于总结；记新人物、新设定、世界观补充）</label>
+    <textarea id="summary-keymems" placeholder="例：药剂师艾琳，灰石城东区，会给薇拉留后门；联邦军今年开始查兽人身份（每行一条）"></textarea>
+    <p class="field-note">在对话里点「⭐ 重要」可以把一问一答压缩成一条（≤160 字）写到这里，一次标记一条，互不合并；完全相同的会被挡下。也可以手写、手改。它会作为独立一块注入提示词，与总结冲突时以它为准。</p>
+  </div>
+  <div class="field">
+    <label>📅 剧情时间线（每行一条：时间 | 地点 | 事件）</label>
+    <textarea id="summary-timeline" placeholder="2026-01-15 周四·深夜 | 公寓 | 两人 | 她第一次主动开口"></textarea>
+    <div class="sum-actions">
+      <button id="summary-tl-optimize" type="button" title="立刻让 AI 把同一地点、同一件事的多条合并（不用等每 8 轮一次的自动精简）">✨ 立即精简</button>
+    </div>
+    <label class="check-row"><input type="checkbox" id="cs-timeline-enabled"> 启用剧情时间线（每轮自动维护：时间 / 地点 / 人物 / 事件；关掉后下面的内容不再自动更新，但手改仍会注入正文）</label>
+    <p class="field-note">时间线也会注入正文提示词，越短越省 token。手改完点下面「保存」即可；AI 每 8 轮会自动合并一次，也可以点上面的「✨ 立即精简」马上合并。</p>
+  </div>
+  <div class="field">
+    <label>把这份进度带到新对话</label>
+    <div class="sum-actions">
+      <button id="summary-clone" type="button" title="新建一段对话，并把这边的总结、时间线、最近 10 段对话与最后一版状态栏一并带过去">📥 继承到新对话</button>
+    </div>
+    <p class="field-note">会带过去：大总结 · 剧情时间线 · 最近 10 段对话正文 · 最后一版状态栏。新对话是独立的，这边不受影响。</p>
+  </div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="summary-save" class="primary">保存</button>
+  </div>
+</div>
+
+<!-- 图片裁剪弹窗 -->
+<div id="crop-modal" class="modal crop-modal">
+  <h2>裁剪图片 <span id="crop-mode-label"></span> <button id="crop-cancel-x" class="close-x">×</button></h2>
+  <p class="modal-tip">拖动框体移动选区，拖动右下角手柄调整大小（比例固定）。</p>
+  <div id="crop-stage">
+    <img id="crop-img" alt="" draggable="false">
+    <div id="crop-shade-top"></div>
+    <div id="crop-shade-bottom"></div>
+    <div id="crop-shade-left"></div>
+    <div id="crop-shade-right"></div>
+    <div id="crop-box">
+      <div id="crop-handle"></div>
+    </div>
+  </div>
+  <div class="modal-btns">
+    <span class="flex-spacer"></span>
+    <button id="crop-cancel">取消</button>
+    <button id="crop-ok" class="primary">确定裁剪</button>
+  </div>
+</div>
+
+<!-- 设置抽屉 -->
+<div id="drawer-mask"></div>
+<div id="drawer">
+  <h2>设置</h2>
+  <div class="field">
+    <label>API Key（每个提供商各存一份，切换时自动换）</label>
+    <input type="text" id="api-key" placeholder="sk-...">
+    <p class="persona-status" id="api-key-note">当前：读取中…</p>
+  </div>
+  <div class="field">
+    <label>本地服务 · 模型转发</label>
+    <p class="persona-status" id="net-status">检测中…</p>
+    <p class="field-note">用「npm run dev / npm start」打开时，模型请求会经本地服务转发（绕开第三方接口的 CORS，Key 也可以只放在服务端 .env 里）；直接双击 index.html 时自动退回浏览器直连。</p>
+  </div>
+  <div class="field is-hidden" id="role-model-field">
+    <label>角色模式 · 模型提供商 <span class="field-note">（仅角色模式生效，聊天伴侣仍用顶部模型选择）</span></label>
+    <select id="role-provider">
+      <option value="deepseek">DeepSeek</option>
+      <option value="kimi">Kimi（月之暗面）</option>
+      <option value="glm">GLM（智谱）</option>
+      <option value="relay88">88api · Gemini 中转</option>
+      <option value="xin">xin1122 · Gemini 直连</option>
+      <option value="custom">自定义</option>
+    </select>
+    <label class="sub-label">模型</label>
+    <div id="role-model-sel-wrap">
+      <select id="role-model"></select>
+    </div>
+    <div id="role-model-txt-wrap" class="is-hidden">
+      <input type="text" id="role-model-txt" placeholder="输入自定义模型名，如 glm-4.5">
+    </div>
+    <label class="sub-label">接口地址（切换提供商自动带出，可修改）</label>
+    <input type="text" id="role-endpoint" placeholder="https://…/chat/completions">
+    <label class="sub-label">思考强度（正文生成用）</label>
+    <select id="cs-effort">
+      <option value="">自动（按提供商默认）</option>
+      <option value="max">max（最高，DeepSeek）</option>
+      <option value="high">high</option>
+      <option value="medium">medium</option>
+      <option value="low">low</option>
+      <option value="minimal">minimal（几乎没有思考）</option>
+      <option value="none">none（关闭思考）</option>
+    </select>
+    <p class="field-note">Gemini 系认 high/medium/low/minimal/none；DeepSeek 认到 max。发错的值接口会报 400，正文会自动摘掉重发一次。</p>
+    <label class="sub-label">首字等待上限（秒）</label>
+    <input type="number" id="cs-first-byte" min="20" max="1800" step="10" value="300">
+    <p class="field-note">发出请求后多久还没吐第一个字就判超时。会思考的模型 + 长设定要给够时间，默认 300。</p>
+    <label class="sub-label">重要记忆压缩用模型</label>
+    <input type="text" id="cs-keymem-model" placeholder="留空 = 自动挑当前提供商里最快的一档（flash-lite / flash 等）">
+    <p class="field-note">点「⭐ 重要」时只需要提炼一句话，用快模型即可，不必等旗舰模型。</p>
+    <label class="sub-label">辅助任务模型（状态栏 / 时间线 / 总结）</label>
+    <select id="cs-aux"></select>
+    <p class="field-note">「自动」= 剧情内务默认用 DeepSeek flash；「跟随正文」= 不单独设置，用正文那家。</p>
+    <label class="sub-label">辅助任务的模型名（可选，留空自动挑最快的一档）</label>
+    <input type="text" id="cs-aux-model" placeholder="例：deepseek-v4-flash / gemini-3.1-flash-lite">
+    <p class="field-note">这一组管的是剧情内务：状态栏、时间线、总结、重要记忆压缩。默认走 DeepSeek flash（便宜快）；选「跟随正文」才会用正文那家。</p>
+    <label class="sub-label">辅助任务的思考强度</label>
+    <select id="cs-aux-effort">
+      <option value="">不指定（接口默认，最快）</option>
+      <option value="max">max</option>
+      <option value="high">high</option>
+      <option value="medium">medium</option>
+      <option value="low">low</option>
+      <option value="minimal">minimal（几乎没有思考）</option>
+      <option value="none">none（关闭思考）</option>
+    </select>
+    <p class="field-note">和正文的思考强度互不影响。状态栏/时间线/总结是内务，默认不发思考参数——调高只会变慢。</p>
+  </div>
+  <div class="field" id="persona-field">
+    <label>人格文件（.txt，每次对话前自动注入 · 仅普通聊天模式生效）</label>
+    <div class="persona-row">
+      <input type="file" id="persona-file" accept=".txt,text/plain" hidden>
+      <button id="persona-btn" type="button">选择 txt 文件</button>
+      <button id="persona-clear" type="button" class="is-hidden">移除</button>
+    </div>
+    <div class="persona-status" id="persona-status">未加载人格文件，使用内嵌基础设定</div>
+  </div>
+  <div class="field" id="sysprompt-field">
+    <label>补充设定（可选，追加在人格之后 · 仅普通聊天模式生效）</label>
+    <textarea id="system-prompt" placeholder="留空则仅使用「内嵌基础设定 + 人格文件」"></textarea>
+  </div>
+  <div class="field" id="reasoning-field">
+    <label class="check-row"><input type="checkbox" id="show-reasoning"> 显示思考过程（默认隐藏，保持沉浸感）</label>
+  </div>
+  <div class="field" id="temp-field">
+    <label>创造力 (temperature) <span class="val" id="temp-val">1.3</span></label>
+    <input type="range" id="temperature" min="0" max="2" step="0.1" value="1.3">
+  </div>
+  <div class="field" id="histlen-field">
+    <label>携带历史消息数</label>
+    <select id="history-len">
+      <option value="10">最近 10 条</option>
+      <option value="20">最近 20 条</option>
+      <option value="50" selected>最近 50 条</option>
+      <option value="60">最近 60 条</option>
+      <option value="80">最近 80 条</option>
+      <option value="100">最近 100 条</option>
+      <option value="9999">全部</option>
+    </select>
+  </div>
+  <div class="field" id="backup-field">
+    <label>数据备份（对话 / 角色 / 世界书 / 设置全都存在浏览器里，清浏览器数据或换浏览器就没了）</label>
+    <div class="persona-row">
+      <input type="file" id="backup-import-file" accept=".json,application/json" hidden>
+      <button id="backup-export" type="button" title="把全部数据导出成一个 JSON 文件存到电脑上">⬇ 导出全部数据</button>
+      <button id="backup-import" type="button" title="从备份文件恢复（会覆盖当前全部数据，恢复前会自动再存一份）">⬆ 从备份恢复</button>
+    </div>
+    <div class="persona-row">
+      <button id="backup-auto-now" type="button" title="立刻把当前对话存一份快照到本地数据库（不产生文件）">⏱ 立即快照</button>
+      <button id="backup-auto-restore" type="button" title="用最近一份自动快照把对话恢复回来（当前内容会先自动另存）">↺ 恢复最近快照</button>
+      <select id="backup-auto-interval" title="自动快照的间隔（只存在本地数据库，不写文件）">
+        <option value="0">关闭自动快照</option>
+        <option value="5">每 5 分钟</option>
+        <option value="10">每 10 分钟</option>
+        <option value="30">每 30 分钟</option>
+        <option value="60">每 60 分钟</option>
+      </select>
+    </div>
+    <div class="persona-status" id="backup-auto-status">自动快照：读取中…</div>
+    <div class="persona-status" id="backup-status">建议隔一阵导出一次；换浏览器、换打开方式之前务必先导出。</div>
+  </div>
+</div>
+
+<!-- 模块按依赖顺序加载（经典脚本，保证 file:// 协议下可用） -->
+<script src="vendor/marked.global.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "name": "dsh-roleplay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Roleplay chat mode for DeepSeek Harness: a sidebar panel that mounts the local roleplay app on /rp/ with its own storage, SSE proxy and migration bridge.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "static",
+    "locale",
+    "docs",
+    "scripts",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/sync-static.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/api.test.mjs test/static.test.mjs",
+    "start": "node scripts/dev-server.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "roleplay",
+    "deepseek-harness",
+    "chat"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

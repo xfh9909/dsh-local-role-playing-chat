@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Roleplay mode",
+    "description": "Adds a roleplay row to the left navigation that opens a local roleplay chat app: character cards, world books, favor stages, story summaries and per-NPC relations. The app keeps its own storage (rp_ keys / rp_chat_db), its own model passthrough under /rp/api, and never touches DSH sessions.",
+    "detail": "docs/DETAIL.md"
+  }
+}
