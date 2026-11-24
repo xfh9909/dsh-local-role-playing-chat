@@ -4,6 +4,31 @@ All notable changes to this plugin are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-11-24
+
+Dark palette pinned, and the empty-library dead ends now say what is wrong.
+
+### Changed
+
+- **The panel is always dark.** It no longer follows the host color scheme; the
+  app's own `body.dark` is applied at boot and re-applied whenever the app
+  strips it. Typography still follows the host body font.
+- **Empty-state feedback instead of silence.** «总结» (and anything routed
+  through `openSummary`) used to `alert` or return silently when there is no
+  character or no open session — which reads as a broken button. It now toasts
+  the actual reason: no character card, or no session selected.
+- **Migration sender accepts http pages and both route shapes.** The old page
+  can push to the plugin from `#migrate=<port>`; the sender tries
+  `/rp/api/migrate` (plugin) first, then `/api/migrate` (bundled server), and
+  uses an absolute target URL so a different port works.
+
+### Fixed
+
+- The summary modal opened fine with data; the report of a dead button came
+  from an empty `rp_*` library (the app's own storage is isolated behind
+  `rp_`/`rp_chat_db`, and the legacy pages live on another origin). The copy
+  now explains how to bring data over instead of looking broken.
+
 ## [1.0.1] — 2026-11-24
 
 Panel polish after a first hands-on pass: the two ✕ marks did nothing and are gone,

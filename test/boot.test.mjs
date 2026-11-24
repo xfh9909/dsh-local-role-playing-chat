@@ -244,10 +244,10 @@ describe('boot shim — embed mode', () => {
     assert.equal(messages[0].type, 'dsh-roleplay:exit')
   })
 
-  it('follows the host color scheme', () => {
+  it('pins the app to its dark palette regardless of the host scheme', () => {
     const light = run({ embed: true, hostDark: false })
-    assert.equal(light.body.classList.contains('dark'), false)
-    assert.equal(light.body.style.fontFamily, 'Host Sans')
+    assert.equal(light.body.classList.contains('dark'), true, 'dark even when the host is light')
+    assert.equal(light.body.style.fontFamily, 'Host Sans', 'typography still follows the host')
 
     const dark = run({ embed: true, hostDark: true })
     assert.equal(dark.body.classList.contains('dark'), true)
@@ -258,5 +258,6 @@ describe('boot shim — embed mode', () => {
     assert.equal(header.children.length, 0, 'no exit button outside the panel')
     assert.equal(head.children.length, 0, 'no embed stylesheet outside the panel')
     assert.equal(body.style.fontFamily, undefined, 'host theme not applied')
+    assert.equal(body.classList.contains('dark'), false, 'standalone keeps the app’s own theme')
   })
 })

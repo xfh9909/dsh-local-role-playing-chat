@@ -11,7 +11,8 @@
  *   3. 嵌入模式：iframe 里直接进角色扮演界面（预置 ds_mode=role），
  *      收掉应用自带的「← 返回聊天模式」，在标题栏最右放一个同风格的
  *      「回到对话」——点了给父页面发 postMessage，由插件切回 DSH 对话。
- *   4. 风格统一：明暗跟随宿主主题，字体族跟随宿主正文。
+ *   4. 面板固定深色：不管宿主是亮是暗，这里始终是应用的暗色主题；
+ *      字体族仍跟随宿主正文。
  *
  * 独立打开（file:// 或自带服务）时 window.parent === window，第 3、4 条
  * 整个跳过，行为和改造前完全一样。
@@ -141,50 +142,44 @@
     document.documentElement.classList.add('rp-embed');
   }
 
-  /* ---------------- 4. 跟随宿主主题 ---------------- */
+  /* ---------------- 4. 面板一律深色 ---------------- */
 
-  function hostDocument() {
-    try {
-      var doc = window.parent && window.parent.document;
-      return doc && doc.body ? doc : null;
-    } catch (e) {
-      return null;
-    }
+  /* The panel is the app, not the host: it keeps its own dark palette even
+     when DSH is in light mode. Re-applied on every body class change so the
+     app's own theme switch cannot flip it back mid-session. */
+  function forceDark() {
+    if (!document.body) return;
+    if (!document.body.classList.contains('dark')) document.body.classList.add('dark');
   }
 
-  function applyHostTheme() {
-    var doc = hostDocument();
-    if (!doc) return;
+  function watchBodyTheme() {
+    if (typeof MutationObserver !== 'function' || !document.body) return;
     try {
-      // The shell marks dark mode on <body> (data-ds-dark-theme) and paints
-      // the palette as CSS variables; the app here only knows body.dark.
-      var dark = doc.body.hasAttribute('data-ds-dark-theme') ||
-        doc.documentElement.hasAttribute('data-ds-dark-theme');
-      document.body.classList.toggle('dark', !!dark);
+      new MutationObserver(forceDark).observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+    } catch (e) {}
+  }
 
-      var computed = window.parent.getComputedStyle(doc.body);
-      var fontFamily = computed.fontFamily;
+  /* Typography still follows the host so the two halves do not fight over
+     font stacks; only the color scheme is pinned. */
+  function applyHostTypography() {
+    try {
+      var doc = window.parent && window.parent.document;
+      if (!doc || !doc.body) return;
+      var fontFamily = window.parent.getComputedStyle(doc.body).fontFamily;
       if (fontFamily) document.body.style.fontFamily = fontFamily;
     } catch (e) {
       /* cross-document reads can throw under stricter embedders; keep app defaults */
     }
   }
 
-  function watchHostTheme() {
-    var doc = hostDocument();
-    if (!doc || typeof MutationObserver !== 'function') return;
-    try {
-      new MutationObserver(applyHostTheme).observe(doc.body, {
-        attributes: true,
-        attributeFilter: ['data-ds-dark-theme', 'class', 'style']
-      });
-    } catch (e) {}
-  }
-
   function boot() {
     paintEmbedChrome();
-    applyHostTheme();
-    watchHostTheme();
+    forceDark();
+    watchBodyTheme();
+    applyHostTypography();
     // The header exists by DOMContentLoaded; the role view itself renders later,
     // so one deferred retry covers a slow first paint.
     if (!document.getElementById('rp-exit')) setTimeout(mountExitButton, 400);
