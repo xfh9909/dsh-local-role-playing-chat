@@ -15,6 +15,7 @@
   - `/rp/api/*`：`status` / `chat`（SSE 透传）/ `migrate`（旧数据暂存）/ `settings` / `backup`。
 - **一套隔离存储**：适配层把 `localStorage` 的键统一加 `rp_` 前缀，把 IndexedDB 的
   `dsh_chat_db` 改名成 `rp_chat_db`。DSH 自己的会话数据一个字节都碰不到。
+- **面板固定深色**：不管 DSH 现在是亮是暗，面板里一直是应用的暗色配色；字体仍跟随宿主。
 
 ## 装
 
@@ -40,6 +41,13 @@
 脚本会把 `origin` 指过去，推 `main` 和全部标签。默认分支记得设成 `main`，
 `.github/workflows/ci.yml` 会在 Ubuntu / Windows + Node 20/22 上跑校验与测试。
 
+**HTTPS 443 不通的时候**（国内常见，表现为 `Recv failure: Connection was reset`
+而 `api.github.com` 还能访问）：git 协议走不了，但 REST API 能。用
+`git credential fill` 取出现有凭据，再走 Git Data API 建 commit：
+`_tools/push-api.mjs` 与 `_tools/sync-local-sha.mjs` 就是干这个的（不随仓库发布）。
+注意 API 侧建的 commit 是 GitHub 自己署名的，本地那个等价 commit 的 sha 会对不上，
+网络恢复后执行 `git fetch origin && git reset --hard origin/main` 对齐即可——内容完全一致。
+
 应用本体更新后同步产物：
 
 ```powershell
@@ -54,9 +62,11 @@ git add static && git commit -m "同步应用构建产物"
 `http://127.0.0.1:5180`），它们的浏览器存储和插件里的 `/rp/` 是三个独立抽屉。
 三条路，任选：
 
-1. **自动桥（推荐）**：在旧页面用 `index.html#migrate=端口` 打开（接收端是插件时端口就是
-   DSH 的端口，例如 `index.html#migrate=52210`），页面会把本机数据 POST 到
-   `/rp/api/migrate` 暂存；之后打开插件的「角色扮演」，应用发现本地是空库就自动取回导入。
+1. **自动桥（推荐）**：在**旧页面**地址后面加 `#migrate=<DSH 端口>`，例如
+   `http://127.0.0.1:5180/#migrate=52210` 或 `file:///.../migrate.html#migrate=52210`。
+   页面会把本机数据推到 `/rp/api/migrate` 暂存；之后打开插件的「角色扮演」，
+   应用发现本地是空库就自动取回导入。发送端两个路由都会试
+   （`/rp/api/migrate` 优先，再 `/api/migrate`），所以同一套页面既能推给插件也能推给自带服务。
 2. **手动导出/导入**：旧页面「⚙️ 设置 → ⬇ 导出全部数据」得到 JSON，插件页面「⚙️ 设置 →
    ⬆ 从备份恢复」。
 3. **服务端备份**：`POST /rp/api/backup` 把页面数据另存到 `data/backups/`，随时可回。
