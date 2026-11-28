@@ -2,23 +2,23 @@
   "name": "dsh-roleplay static bundle",
   "app": "破甲deep聊天",
   "appVersion": "1.1.0",
-  "appBuiltAt": "2026-11-28T08:42:13.133Z",
-  "syncedAt": "2026-11-28T08:42:13.236Z",
+  "appBuiltAt": "2026-11-28T08:48:45.705Z",
+  "syncedAt": "2026-11-28T08:48:45.794Z",
   "files": [
     {
       "file": "index.html",
-      "bytes": 39394,
-      "sha256": "d90e7115e1018d42"
+      "bytes": 39554,
+      "sha256": "b988504d4c9bea2a"
     },
     {
       "file": "app.js",
-      "bytes": 254082,
-      "sha256": "854f9db1dd5cb3df"
+      "bytes": 254310,
+      "sha256": "7347bfc5b8b1fd19"
     },
     {
       "file": "app.css",
-      "bytes": 36098,
-      "sha256": "8111dce3ec47c8cd"
+      "bytes": 36207,
+      "sha256": "3fd4559b294fc00a"
     },
     {
       "file": "vendor/marked.global.js",

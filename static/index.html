@@ -564,7 +564,10 @@
   <h2>设置</h2>
   <div class="field">
     <label>API Key（每个提供商各存一份，切换时自动换）</label>
-    <input type="text" id="api-key" placeholder="sk-...">
+    <div class="key-row">
+      <input type="password" id="api-key" placeholder="sk-..." autocomplete="off" spellcheck="false">
+      <button type="button" id="api-key-toggle" class="btn-sm">显示</button>
+    </div>
     <p class="persona-status" id="api-key-note">当前：读取中…</p>
   </div>
   <div class="field">

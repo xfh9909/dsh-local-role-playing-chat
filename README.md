@@ -78,13 +78,17 @@ git add static && git commit -m "同步应用构建产物"
 优先级：**页面上填的** > **插件 `data/settings.json` 的 `keys`** > **环境变量**
 （`DEEPSEEK_API_KEY`、`KIMI_API_KEY`、`GLM_API_KEY`、`RELAY88_API_KEY`、`XIN_API_KEY`、`CUSTOM_API_KEY`）。
 
-服务端 Key 用这条写：
+服务端 Key 用这条写（端口换成你现在这个面板的端口）：
 
 ```powershell
 curl.exe -X POST http://127.0.0.1:52210/rp/api/settings `
   -H "content-type: application/json" `
+  -H "origin: http://127.0.0.1:52210" `
   -d '{\"keys\":{\"deepseek\":\"sk-...\"}}'
 ```
+
+> 所有 `/rp/api/*` 路由只认同源请求：浏览器自己就会带对来源，命令行要手动补 `origin`，
+> 端口写错会拿到 403。这样本机别的程序没法借插件里存的 Key 发请求。
 
 `GET /rp/api/settings` 只回掩码，不回明文。
 

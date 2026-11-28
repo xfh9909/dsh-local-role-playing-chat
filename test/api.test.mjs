@@ -14,14 +14,18 @@ let base
 let dataDir
 let store
 
-function request(pathname, init) {
-  return fetch(`${base}${pathname}`, init)
+function request(pathname, init = {}) {
+  /* Node 的 fetch 不发 Sec-Fetch-Site，收紧后必须显式声明同源来源 */
+  return fetch(`${base}${pathname}`, {
+    ...init,
+    headers: { origin: base, ...(init.headers || {}) },
+  })
 }
 
 function jsonRequest(pathname, body, init = {}) {
   return fetch(`${base}${pathname}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...(init.headers || {}) },
+    headers: { 'content-type': 'application/json', origin: base, ...(init.headers || {}) },
     body: JSON.stringify(body),
     ...init,
   })
@@ -83,10 +87,13 @@ describe('trust checks', () => {
   })
 
   it('refuses cross-site requests and foreign origins', () => {
-    assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1' } }), true)
+    /* 裸请求（curl / 脚本）两个头都没有：过去放行，现在必须拒 */
+    assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1' } }), false)
     assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1', 'sec-fetch-site': 'cross-site' } }), false)
+    assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1', 'sec-fetch-site': 'same-site' } }), false)
     assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1', origin: 'http://evil.example' } }), false)
     assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1', origin: 'http://127.0.0.1:1' } }), true)
+    assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:1', 'sec-fetch-site': 'same-origin' } }), true)
   })
 })
 
@@ -206,7 +213,7 @@ describe('migration staging', () => {
   it('answers the preflight with CORS headers', async () => {
     const response = await request('/rp/api/migrate', { method: 'OPTIONS' })
     assert.equal(response.status, 204)
-    assert.equal(response.headers.get('access-control-allow-origin'), '*')
+    assert.equal(response.headers.get('access-control-allow-origin'), base, 'preflight echoes the caller origin')
   })
 
   it('rejects an unknown route', async () => {
