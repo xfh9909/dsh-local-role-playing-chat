@@ -109,11 +109,6 @@
           <div id="role-scene-present" class="scene-chips"></div>
           <button id="role-scene-rel" type="button" class="btn-sm" title="查看/编辑关系与好感">❤️ 关系</button>
         </div>
-        <!-- 剧情时间线栏：短期记忆，随对话自动更新，辅助时间/地点/人物一致性 -->
-        <div id="role-timeline" class="is-hidden">
-          <div class="tl-head"><span class="tl-title">📅 剧情时间线</span><span class="tl-count" id="role-tl-count"></span><button id="role-tl-add" type="button" title="手动补一条（AI 漏掉的、或你想强调的）">＋ 添加</button><button id="role-tl-optimize" type="button" title="让 AI 浏览最近 30 条对话，把琐碎事件合并精简，避免单一场景占满记忆位">✨ 优化</button><button id="role-tl-toggle" type="button">收起</button></div>
-          <div class="tl-body" id="role-tl-body"></div>
-        </div>
         <div id="role-chat">
           <div class="wrap" id="role-messages">
             <div class="empty" id="role-empty">
@@ -147,13 +142,9 @@
     <p class="field-note">开启后这张卡是「世界」而不是单个角色：可以添加多个可攻略 NPC 与地点，对话时由 AI 扮演所有在场角色、玩家自由行动。关掉就还是普通单角色卡。</p>
   </div>
   <div class="field is-hidden" id="re-world-fields">
-    <label>可攻略角色（NPC 名册）</label>
-    <div id="re-npc-list" class="npc-editor-list"></div>
-    <button id="re-npc-add" type="button" class="btn-sm">＋ 添加 NPC</button>
     <label class="sub-label">地点（玩家能去的地方）</label>
     <div id="re-loc-list" class="loc-editor-list"></div>
     <button id="re-loc-add" type="button" class="btn-sm">＋ 添加地点</button>
-    <p class="field-note">NPC「详细设定」写得越具体越好：身份、性格、外貌、秘密、对玩家的初始态度。说话方式用来固定口癖与称呼。</p>
   </div>
   <div class="re-grid">
     <div class="re-col">
@@ -213,13 +204,42 @@
       </div>
     </div>
     <div class="re-col">
+      <!-- 详细设定：标签固定，不随单/多角色模式改文案 -->
       <div class="field">
         <label id="re-personality-label">详细设定（性格、外貌、背景、说话风格等）</label>
         <textarea id="re-personality" placeholder="越详细越好，例如：你是一名 17 岁的女高中生，性格开朗……"></textarea>
       </div>
+      <!-- 单角色专用：说话方式与基础好感 -->
+      <div id="re-single-person">
+        <div class="field">
+          <label>说话方式 / 口癖（可选）</label>
+          <input type="text" id="re-speech" placeholder="例如：句尾爱带「呢」，紧张时会结巴">
+        </div>
+        <div class="field">
+          <label>初始好感（0~100，新对话的关系起点）</label>
+          <input type="number" id="re-favor" min="0" max="100" step="1" value="0">
+        </div>
+      </div>
+      <!-- 多角色专用的 NPC 名册：紧挨详细设定，和玩家设定之间 -->
+      <div class="field is-hidden" id="re-npc-block">
+        <label>可攻略角色（NPC 名册，可以随时增删）</label>
+        <div id="re-npc-list" class="npc-editor-list"></div>
+        <button id="re-npc-add" type="button" class="btn-sm">＋ 添加 NPC</button>
+        <p class="field-note">NPC「详细设定」写得越具体越好：身份、性格、外貌、秘密、对玩家的初始态度。说话方式用来固定口癖与称呼，台词色决定这个 NPC 说的话显示成什么颜色。</p>
+      </div>
+      <div class="field" id="re-dialogue-field">
+        <label id="re-dialogue-label">角色台词颜色（这个角色说的话显示成这个颜色）</label>
+        <input type="color" id="re-dialogue-color" value="#ffd54a">
+        <p class="field-note">只影响引号里的台词，旁白不变。</p>
+      </div>
       <div class="field">
         <label>玩家设定（你是谁：姓名、身份、外貌等，AI 会据此了解并称呼你，可留空）</label>
         <textarea id="re-userinfo" placeholder="例如：张三，22 岁的冒险者，性格豪爽，喜欢喝酒和打猎"></textarea>
+      </div>
+      <div class="field">
+        <label>主角台词颜色（你说的话显示成这个颜色）</label>
+        <input type="color" id="re-user-color" value="#8fd3ff">
+        <p class="field-note">只影响引号里的台词，和上面角色台词色区分开就不会看串。</p>
       </div>
       <div class="field">
         <label>开场白（新对话时自动发送的第一句话，可留空）</label>
@@ -393,10 +413,6 @@
     <input type="color" id="cs-narration" value="#ffffff">
   </div>
   <div class="field">
-    <label>引号内话语颜色（默认黄色）</label>
-    <input type="color" id="cs-dialogue" value="#ffd54a">
-  </div>
-  <div class="field">
     <label>输出格式要求（注入到角色设定，可自定义）</label>
     <textarea id="cs-note" placeholder="例如：角色说出口的话语用双引号包裹，旁白不加引号……"></textarea>
   </div>
@@ -509,20 +525,11 @@
     <p class="field-note">在对话里点「⭐ 重要」可以把一问一答压缩成一条（≤160 字）写到这里，一次标记一条，互不合并；完全相同的会被挡下。也可以手写、手改。它会作为独立一块注入提示词，与总结冲突时以它为准。</p>
   </div>
   <div class="field">
-    <label>📅 剧情时间线（每行一条：时间 | 地点 | 事件）</label>
-    <textarea id="summary-timeline" placeholder="2026-01-15 周四·深夜 | 公寓 | 两人 | 她第一次主动开口"></textarea>
-    <div class="sum-actions">
-      <button id="summary-tl-optimize" type="button" title="立刻让 AI 把同一地点、同一件事的多条合并（不用等每 8 轮一次的自动精简）">✨ 立即精简</button>
-    </div>
-    <label class="check-row"><input type="checkbox" id="cs-timeline-enabled"> 启用剧情时间线（每轮自动维护：时间 / 地点 / 人物 / 事件；关掉后下面的内容不再自动更新，但手改仍会注入正文）</label>
-    <p class="field-note">时间线也会注入正文提示词，越短越省 token。手改完点下面「保存」即可；AI 每 8 轮会自动合并一次，也可以点上面的「✨ 立即精简」马上合并。</p>
-  </div>
-  <div class="field">
     <label>把这份进度带到新对话</label>
     <div class="sum-actions">
-      <button id="summary-clone" type="button" title="新建一段对话，并把这边的总结、时间线、最近 10 段对话与最后一版状态栏一并带过去">📥 继承到新对话</button>
+      <button id="summary-clone" type="button" title="新建一段对话，并把这边的总结、最近 10 段对话与最后一版状态栏一并带过去">📥 继承到新对话</button>
     </div>
-    <p class="field-note">会带过去：大总结 · 剧情时间线 · 最近 10 段对话正文 · 最后一版状态栏。新对话是独立的，这边不受影响。</p>
+    <p class="field-note">会带过去：大总结 · 重要记忆 · 最近 10 段对话正文 · 最后一版状态栏。新对话是独立的，这边不受影响。</p>
   </div>
   <div class="modal-btns">
     <span class="flex-spacer"></span>
@@ -601,12 +608,12 @@
     <label class="sub-label">重要记忆压缩用模型</label>
     <input type="text" id="cs-keymem-model" placeholder="留空 = 自动挑当前提供商里最快的一档（flash-lite / flash 等）">
     <p class="field-note">点「⭐ 重要」时只需要提炼一句话，用快模型即可，不必等旗舰模型。</p>
-    <label class="sub-label">辅助任务模型（状态栏 / 时间线 / 总结）</label>
+    <label class="sub-label">辅助任务模型（状态栏 / 总结 / 重要记忆）</label>
     <select id="cs-aux"></select>
     <p class="field-note">「自动」= 剧情内务默认用 DeepSeek flash；「跟随正文」= 不单独设置，用正文那家。</p>
     <label class="sub-label">辅助任务的模型名（可选，留空自动挑最快的一档）</label>
     <input type="text" id="cs-aux-model" placeholder="例：deepseek-v4-flash / gemini-3.1-flash-lite">
-    <p class="field-note">这一组管的是剧情内务：状态栏、时间线、总结、重要记忆压缩。默认走 DeepSeek flash（便宜快）；选「跟随正文」才会用正文那家。</p>
+    <p class="field-note">这一组管的是剧情内务：状态栏、总结、重要记忆压缩。默认走 DeepSeek flash（便宜快）；选「跟随正文」才会用正文那家。</p>
     <label class="sub-label">辅助任务的思考强度</label>
     <select id="cs-aux-effort">
       <option value="">不指定（接口默认，最快）</option>
@@ -617,7 +624,7 @@
       <option value="minimal">minimal（几乎没有思考）</option>
       <option value="none">none（关闭思考）</option>
     </select>
-    <p class="field-note">和正文的思考强度互不影响。状态栏/时间线/总结是内务，默认不发思考参数——调高只会变慢。</p>
+    <p class="field-note">和正文的思考强度互不影响。状态栏/总结是内务，默认不发思考参数——调高只会变慢。</p>
   </div>
   <div class="field" id="persona-field">
     <label>人格文件（.txt，每次对话前自动注入 · 仅普通聊天模式生效）</label>

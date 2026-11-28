@@ -175,6 +175,187 @@
     }
   }
 
+  /* ---------------- 5. 旧数据导入入口 ----------------
+     The app's own bridge only polls once, on a fresh load of an empty library;
+     miss that window and the staged backup just sits there. This is the
+     explicit door: if the plugin still holds a staged backup, show a banner and
+     let the click drive importAll directly. */
+  var IMPORT_DISMISS_KEY = 'ds_import_dismissed';
+  var importProbing = false;
+
+  function readStaged() {
+    return fetch('/rp/api/migrate', { cache: 'no-store' })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (body) {
+        if (!body || !body.data || !body.items || !body.items.length) return null;
+        return { data: body.data, item: body.items[0] };
+      });
+  }
+
+  function summarise(data) {
+    var out = { roles: 0, chats: 0 };
+    try {
+      var roles = JSON.parse((data.local && data.local.ds_roles) || '[]');
+      out.roles = Array.isArray(roles) ? roles.length : 0;
+      var rs = data.roleSessions || {};
+      for (var id in rs) {
+        var list = rs[id] && rs[id].list;
+        out.chats += Array.isArray(list) ? list.length : 0;
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  function dropStaged() {
+    fetch('/rp/api/migrate', { method: 'DELETE' }).catch(function () {});
+  }
+
+  function showImportBanner(staged) {
+    if (document.getElementById('rp-import-banner')) return;
+    var summary = summarise(staged.data);
+    var size = (staged.item.bytes / 1048576).toFixed(1);
+
+    var box = document.createElement('div');
+    box.id = 'rp-import-banner';
+    box.style.cssText = [
+      'position:fixed',
+      'left:50%',
+      'bottom:22px',
+      'transform:translateX(-50%)',
+      'z-index:2147483000',
+      'box-sizing:border-box',
+      'max-width:min(620px, 92vw)',
+      'display:flex',
+      'gap:14px',
+      'align-items:flex-start',
+      'padding:14px 16px',
+      'border:1px solid var(--border, #2c2f37)',
+      'border-radius:12px',
+      'background:var(--panel, #1f2127)',
+      'color:var(--text, #e6e8ec)',
+      'box-shadow:0 12px 34px rgba(0,0,0,.42)',
+      'font:13px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif',
+    ].join(';');
+
+    var text = document.createElement('div');
+    text.style.cssText = 'flex:1 1 auto;min-width:0';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:600;margin-bottom:3px';
+    title.textContent = '发现旧版本的数据';
+    var detail = document.createElement('div');
+    detail.style.cssText = 'color:var(--muted, #8a919e)';
+    detail.textContent =
+      summary.roles + ' 个角色 · ' + summary.chats + ' 个会话（' + size + ' MB，来自 ' + (staged.item.origin || '旧页面') +
+      '）。导入会替换当前的角色与会话。';
+    text.appendChild(title);
+    text.appendChild(detail);
+
+    var actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;align-items:center;flex:0 0 auto';
+
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.textContent = '导入';
+    go.style.cssText = [
+      'height:30px',
+      'padding:0 14px',
+      'border-radius:8px',
+      'border:1px solid var(--primary, #4a6cf7)',
+      'background:var(--primary, #4a6cf7)',
+      'color:#fff',
+      'font-size:13px',
+      'cursor:pointer',
+    ].join(';');
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '关闭';
+    close.style.cssText = [
+      'height:30px',
+      'padding:0 12px',
+      'border-radius:8px',
+      'border:1px solid var(--border, #2c2f37)',
+      'background:transparent',
+      'color:var(--muted, #8a919e)',
+      'font-size:13px',
+      'cursor:pointer',
+    ].join(';');
+
+    go.addEventListener('click', function () {
+      go.disabled = true;
+      go.textContent = '导入中…';
+      detail.textContent = '正在写入本地数据库，数据大的话要等一会儿…';
+      var started = false;
+      try {
+        started = App.roleSessions.importAll(staged.data, function (ok, message) {
+          if (!ok) {
+            detail.textContent = '导入失败：' + (message || '未知原因');
+            go.disabled = false;
+            go.textContent = '重试';
+            return;
+          }
+          dropStaged();
+          detail.textContent = '导入完成：' + (message || '') + '，正在刷新…';
+          setTimeout(function () {
+            location.reload();
+          }, 700);
+        });
+      } catch (error) {
+        started = false;
+        detail.textContent = '导入失败：' + (error && error.message);
+      }
+      if (!started) {
+        go.disabled = false;
+        go.textContent = '重试';
+        if (detail.textContent.indexOf('导入失败') === -1) {
+          detail.textContent = '应用还没准备好，稍后再点一次。';
+        }
+      }
+    });
+
+    close.addEventListener('click', function () {
+      try {
+        localStorage.setItem(IMPORT_DISMISS_KEY, '1');
+      } catch (e) {}
+      box.remove();
+    });
+
+    actions.appendChild(go);
+    actions.appendChild(close);
+    box.appendChild(text);
+    box.appendChild(actions);
+    document.body.appendChild(box);
+  }
+
+  function offerStagedImport() {
+    if (importProbing) return;
+    importProbing = true;
+    var tries = 0;
+    function attempt() {
+      tries += 1;
+      readStaged()
+        .then(function (staged) {
+          if (!staged) {
+            if (tries < 15) setTimeout(attempt, 1200);
+            return;
+          }
+          var dismissed = false;
+          try {
+            dismissed = localStorage.getItem(IMPORT_DISMISS_KEY) === '1';
+          } catch (e) {}
+          if (dismissed) return;
+          showImportBanner(staged);
+        })
+        .catch(function () {
+          if (tries < 5) setTimeout(attempt, 1500);
+        });
+    }
+    // Wait for the app to finish booting so importAll exists when clicked.
+    setTimeout(attempt, 1200);
+  }
+
   function boot() {
     paintEmbedChrome();
     forceDark();
@@ -183,6 +364,7 @@
     // The header exists by DOMContentLoaded; the role view itself renders later,
     // so one deferred retry covers a slow first paint.
     if (!document.getElementById('rp-exit')) setTimeout(mountExitButton, 400);
+    offerStagedImport();
   }
 
   if (document.readyState === 'loading') {
